@@ -18,7 +18,7 @@ function downloadFile(content, filename, type = 'application/json') {
 }
 
 /* ════════════════════════════════════════════
-   Explorer Output: Endpoints + Schema Tree
+   Explorer Output: Endpoints + Schema Tree + Data Flow
    ════════════════════════════════════════════ */
 function SchemaNode({ name, type, depth = 0 }) {
   const [isOpen, setIsOpen] = useState(true);
@@ -52,11 +52,41 @@ function SchemaNode({ name, type, depth = 0 }) {
   );
 }
 
+function DataFlowGraph({ graph }) {
+  if (!graph || !graph.nodes || graph.nodes.length === 0) return null;
+
+  return (
+    <div className="output-section">
+      <h5>Data Flow Graph</h5>
+      <div className="data-flow-container">
+        <div className="data-flow-nodes">
+          {graph.nodes.map((node, i) => (
+            <div key={i} className="flow-node">{node}</div>
+          ))}
+        </div>
+        {graph.edges && graph.edges.length > 0 && (
+          <div className="data-flow-edges">
+            {graph.edges.map((edge, i) => (
+              <div key={i} className="flow-edge">
+                <span className="flow-from">{edge.from}</span>
+                <span className="flow-arrow">→ <em>{edge.relation}</em> →</span>
+                <span className="flow-to">{edge.to}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ExplorerOutput({ data }) {
   if (!data || data.parseError) return <RawOutput data={data} />;
 
   const endpoints = data.importantEndpoints || [];
   const schemaTree = data.schemaTree || {};
+  const dataFlowGraph = data.dataFlowGraph;
+  const criticalEndpoints = data.criticalEndpoints || [];
 
   return (
     <div className="fade-in-up">
@@ -86,6 +116,17 @@ function ExplorerOutput({ data }) {
         </table>
       </div>
 
+      {criticalEndpoints.length > 0 && (
+        <div className="output-section">
+          <h5>⚠️ Critical Endpoints ({criticalEndpoints.length})</h5>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {criticalEndpoints.map((ep, i) => (
+              <span key={i} className="critical-endpoint-tag">{ep}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="output-section">
         <h5>Schema Tree</h5>
         <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
@@ -99,6 +140,8 @@ function ExplorerOutput({ data }) {
         </div>
       </div>
 
+      <DataFlowGraph graph={dataFlowGraph} />
+
       {data.summary && (
         <div className="output-section">
           <h5>Summary</h5>
@@ -110,50 +153,121 @@ function ExplorerOutput({ data }) {
 }
 
 /* ════════════════════════════════════════════
-   Tester Output: 9 Security Categories
+   Tester Output: 12 Security Categories
    ════════════════════════════════════════════ */
 function TesterOutput({ data }) {
   if (!data || data.parseError) return <RawOutput data={data} />;
 
   const tests = data.tests || [];
+  const [expandedTests, setExpandedTests] = useState(new Set());
+
+  const toggleTest = (id) => {
+    setExpandedTests(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const statusIcon = (status) => {
+    if (status === 'FAIL') return '✗';
+    if (status === 'WARN') return '!';
+    return '✓';
+  };
+
   return (
     <div className="fade-in-up">
       <div className="output-section">
-        <h5>Security Tests ({tests.length}/9)</h5>
-        <div style={{ display: 'grid', gap: '12px' }}>
-          {tests.map((test) => (
-            <div key={test.id} style={{
-              background: 'var(--bg-secondary)',
-              border: `1px solid ${test.status === 'FAIL' ? 'var(--agent-guardian)' : test.status === 'WARN' ? 'var(--agent-reporter)' : 'var(--agent-tester)'}`,
-              borderRadius: 'var(--radius-md)',
-              padding: '16px'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                <div style={{ fontSize: '1rem', fontWeight: 600 }}>{test.testName}</div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <span className={`severity-badge ${test.severity}`}>{test.severity}</span>
-                  <span style={{
-                    padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700,
-                    background: test.status === 'FAIL' ? 'rgba(239, 68, 68, 0.2)' : test.status === 'WARN' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-                    color: test.status === 'FAIL' ? '#fca5a5' : test.status === 'WARN' ? '#fcd34d' : '#6ee7b7'
-                  }}>{test.status}</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h5>Security Tests ({tests.length}/12)</h5>
+          <div style={{ display: 'flex', gap: '4px', fontSize: '0.75rem' }}>
+            <span className="mini-badge pass">{tests.filter(t => t.status === 'PASS').length} Pass</span>
+            <span className="mini-badge fail">{tests.filter(t => t.status === 'FAIL').length} Fail</span>
+            <span className="mini-badge warn">{tests.filter(t => t.status === 'WARN').length} Warn</span>
+          </div>
+        </div>
+
+        {data.overallRisk && (
+          <div className="overall-risk-bar" style={{ marginBottom: '16px' }}>
+            <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>Overall Risk: </span>
+            <span className={`severity-badge ${data.overallRisk}`}>{data.overallRisk}</span>
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gap: '8px' }}>
+          {tests.map((test) => {
+            const isExpanded = expandedTests.has(test.id);
+            return (
+              <div key={test.id} className={`test-card ${test.status?.toLowerCase()}`}>
+                <div className="test-card-header" onClick={() => toggleTest(test.id)}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span className="test-expand-icon">{isExpanded ? '▼' : '▶'}</span>
+                    <span className={`test-status-icon ${test.status?.toLowerCase()}`}>{statusIcon(test.status)}</span>
+                    <span style={{ fontSize: '0.9375rem', fontWeight: 600 }}>{test.testName}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span className={`severity-badge ${test.severity}`}>{test.severity}</span>
+                    <span className={`verdict-badge ${test.status?.toLowerCase()}`}>{test.status}</span>
+                  </div>
                 </div>
+
+                {isExpanded && (
+                  <div className="test-card-body fade-in-up">
+                    {test.checks && (
+                      <div className="test-checks">
+                        <strong>Checks:</strong> {test.checks.join(', ')}
+                      </div>
+                    )}
+                    <div className="test-findings">{test.findings}</div>
+
+                    {test.evidence && (
+                      <div className="test-evidence-block">
+                        <div className="evidence-row">
+                          <span className="evidence-key">Payload:</span>
+                          <code className="evidence-val">{test.evidence.payload}</code>
+                        </div>
+                        <div className="evidence-row">
+                          <span className="evidence-key">Request:</span>
+                          <pre className="evidence-pre">{test.evidence.request}</pre>
+                        </div>
+                        <div className="evidence-row">
+                          <span className="evidence-key">Response:</span>
+                          <pre className="evidence-pre">{test.evidence.response}</pre>
+                        </div>
+                        <div className="evidence-row">
+                          <span className="evidence-key">Expected:</span>
+                          <span className="evidence-val expected">{test.evidence.expected}</span>
+                        </div>
+                        <div className="evidence-row">
+                          <span className="evidence-key">Actual:</span>
+                          <span className={`evidence-val actual ${test.evidence.anomalyDetected ? 'anomaly' : ''}`}>{test.evidence.actual}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {test.affectedEndpoints && test.affectedEndpoints.length > 0 && (
+                      <div className="test-affected">
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Affected: </span>
+                        {test.affectedEndpoints.map((ep, i) => (
+                          <code key={i} className="affected-endpoint">{ep}</code>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                <strong>Checks:</strong> {test.checks.join(', ')}
-              </div>
-              <div style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', fontSize: '0.8125rem' }}>
-                {test.findings}
-              </div>
-              {test.affectedEndpoints && test.affectedEndpoints.length > 0 && (
-                <div style={{ marginTop: '12px', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Affected:</span> {test.affectedEndpoints.join(', ')}
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
+
+      {data.summary && (
+        <div className="output-section">
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>{data.summary}</p>
+        </div>
+      )}
+
       <button className="export-btn" onClick={() => downloadFile(JSON.stringify(data, null, 2), 'security-tests.json')}>
         📥 Export Tests (JSON)
       </button>
@@ -162,14 +276,16 @@ function TesterOutput({ data }) {
 }
 
 /* ════════════════════════════════════════════
-   Guardian Output: Elaborated Proof
+   Guardian Output: Elaborated Proof + Evidence
    ════════════════════════════════════════════ */
 function GuardianOutput({ data }) {
   if (!data || data.parseError) return <RawOutput data={data} />;
 
   const score = data.securityScore || 0;
   const results = data.results || [];
-  const scoreColor = score >= 80 ? '#10B981' : score >= 60 ? '#F59E0B' : '#EF4444';
+  const scoreColor = score >= 80 ? '#10B981' : score >= 60 ? '#F59E0B' : score >= 40 ? '#F97316' : '#EF4444';
+  const circumference = 2 * Math.PI * 52;
+  const offset = circumference - (score / 100) * circumference;
 
   return (
     <div className="fade-in-up">
@@ -177,17 +293,15 @@ function GuardianOutput({ data }) {
         <div className="security-score-ring">
           <svg width="120" height="120" viewBox="0 0 120 120">
             <circle cx="60" cy="60" r="52" fill="none" stroke="var(--border-color)" strokeWidth="8" />
-            <circle
-              cx="60" cy="60" r="52" fill="none"
-              stroke={scoreColor}
-              strokeWidth="8"
-              strokeDasharray={`${(score / 100) * 327} 327`}
-              strokeLinecap="round"
+            <circle cx="60" cy="60" r="52" fill="none" stroke={scoreColor} strokeWidth="8"
+              strokeDasharray={`${circumference}`} strokeDashoffset={offset}
+              strokeLinecap="round" transform="rotate(-90 60 60)"
+              style={{ transition: 'stroke-dashoffset 1s ease' }}
             />
           </svg>
           <div className="security-score-value" style={{ color: scoreColor }}>{score}</div>
         </div>
-        <div className="security-score-label">Final Security Score</div>
+        <div className="security-score-label">Security Score ({score}/100)</div>
       </div>
 
       {data.executiveSummary && (
@@ -197,42 +311,84 @@ function GuardianOutput({ data }) {
         </div>
       )}
 
+      {data.criticalActions && data.criticalActions.length > 0 && (
+        <div className="output-section">
+          <h5>🚨 Critical Actions</h5>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {data.criticalActions.map((action, i) => (
+              <div key={i} className="critical-action-item">
+                <span className="action-priority">{i + 1}</span>
+                <span style={{ fontSize: '0.8125rem' }}>{action}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="output-section">
         <h5>Elaborated Results ({results.length})</h5>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {results.map((res, i) => (
             <div key={i}>
-              <h6 style={{ marginBottom: '12px', fontSize: '1.1rem', display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <h6 style={{ marginBottom: '12px', fontSize: '1.1rem', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span className={`test-status-icon ${(res.verdict || 'pass').toLowerCase()}`}>
+                  {res.verdict === 'FAIL' ? '✗' : res.verdict === 'WARN' ? '!' : '✓'}
+                </span>
                 {res.testName}
                 <span className={`severity-badge ${res.severity || 'none'}`}>{res.severity}</span>
-                <span style={{ fontSize: '0.8rem', color: res.verdict === 'FAIL' ? '#fca5a5' : '#6ee7b7' }}>[{res.verdict}]</span>
+                <span className={`verdict-badge ${(res.verdict || 'pass').toLowerCase()}`}>{res.verdict}</span>
               </h6>
+
+              {/* Pass evidence */}
+              {res.verdict === 'PASS' && (res.passEvidence || res.note) && (
+                <div className="pass-evidence-card">
+                  <div className="evidence-label">✅ Pass Evidence</div>
+                  <p>{res.passEvidence || res.note}</p>
+                </div>
+              )}
+
+              {/* Fail/Warn findings */}
               {res.findings && res.findings.map((finding, fi) => (
-                <div key={fi} style={{ background: 'var(--bg-secondary)', borderLeft: '4px solid var(--agent-guardian)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <div key={fi} className="finding-card" style={{ borderLeft: '4px solid var(--agent-guardian)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                     <strong style={{ fontSize: '0.9rem' }}>{finding.issue}</strong>
                     {finding.cwe && (
-                      <span style={{ background: '#374151', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
-                        {finding.cwe}
-                      </span>
+                      <span className="cwe-badge">{finding.cwe}</span>
                     )}
                   </div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                    Target: <span>{finding.endpoint}</span>
-                  </div>
+
+                  {finding.endpoint && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                      Target: <span>{finding.endpoint}</span>
+                    </div>
+                  )}
+
+                  {finding.explanation && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <div className="proof-label">📝 Explanation</div>
+                      <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{finding.explanation}</p>
+                    </div>
+                  )}
                   
                   {finding.proof && (
                     <div style={{ marginBottom: '12px' }}>
-                      <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '4px', fontWeight: 600 }}>Proof of Concept</div>
+                      <div className="proof-label">🔍 Proof of Concept</div>
                       <div className="code-snippet-block" style={{ margin: 0, background: '#111827', border: '1px solid #374151' }}>
                         <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{finding.proof}</pre>
                       </div>
                     </div>
                   )}
 
+                  {finding.businessImpact && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <div className="proof-label">💼 Business Impact</div>
+                      <p style={{ fontSize: '0.8125rem', color: '#F59E0B', lineHeight: 1.6 }}>{finding.businessImpact}</p>
+                    </div>
+                  )}
+
                   {finding.remediation && (
                     <div>
-                      <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--agent-tester)', marginBottom: '4px', fontWeight: 600 }}>Remediation</div>
+                      <div className="proof-label" style={{ color: 'var(--agent-tester)' }}>🔧 Remediation</div>
                       <div className="code-snippet-block" style={{ margin: 0, background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
                         <ReactMarkdown>{finding.remediation}</ReactMarkdown>
                       </div>
@@ -240,13 +396,20 @@ function GuardianOutput({ data }) {
                   )}
                 </div>
               ))}
-              {(!res.findings || res.findings.length === 0) && (
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{res.note}</p>
+              {(!res.findings || res.findings.length === 0) && !res.passEvidence && !res.note && (
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No detailed findings available.</p>
               )}
             </div>
           ))}
         </div>
       </div>
+
+      {data.complianceNotes && (
+        <div className="output-section">
+          <h5>📋 OWASP Compliance</h5>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.8 }}>{data.complianceNotes}</p>
+        </div>
+      )}
 
       <button className="export-btn" onClick={() => downloadFile(JSON.stringify(data, null, 2), 'guardian-report.json')}>
         📥 Export Full Report

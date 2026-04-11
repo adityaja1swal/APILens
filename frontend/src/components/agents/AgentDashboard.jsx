@@ -5,7 +5,7 @@ import AgentPipeline from './AgentPipeline';
 import AgentChat from './AgentChat';
 import AgentOutput from './AgentOutput';
 
-const API_BASE = 'http://localhost:5001';
+const API_BASE = 'http://localhost:5000';
 const ALL_AGENTS = ['Explorer', 'Tester', 'Guardian'];
 
 export default function AgentDashboard() {

@@ -2,11 +2,13 @@ const { callClaude, parseAgentJSON } = require("./agentUtils");
 
 const SYSTEM_PROMPT = `You are an API Explorer Agent. Given a Swagger JSON, OpenAPI spec, or API URL, deeply analyze the API structure.
 
-You must return TWO things:
+You must return THREE things:
 
-1. **Important Endpoints** — The most significant/sensitive endpoints. For each, include method, path, parameters, whether auth is required, a risk level (high/medium/low), and a short description of what it does.
+1. **Important Endpoints** — The most significant/sensitive endpoints. For each, include method, path, parameters, whether auth is required, a risk level (high/medium/low/critical), and a short description of what it does.
 
-2. **Schema Tree** — A nested object representing the API's data model hierarchy. Each top-level key is a resource/model name, and the value is an object of field names mapped to their types (string, integer, boolean, array, object). Include nested objects where applicable.
+2. **Schema Tree** — A nested object representing the API's data model hierarchy. Each top-level key is a resource/model name, and the value is an object of field names mapped to their types (string, integer, boolean, array, object). Include nested objects where applicable. Mark sensitive fields (password, token, key, SSN, etc).
+
+3. **Data Flow Graph** — A graph of resource relationships showing how data flows between entities.
 
 Output ONLY valid JSON in this exact shape:
 {
@@ -31,14 +33,16 @@ Output ONLY valid JSON in this exact shape:
         "name": "string",
         "avatar_url": "string"
       }
-    },
-    "Order": {
-      "id": "integer",
-      "user_id": "integer",
-      "items": "array<OrderItem>",
-      "total": "number"
     }
   },
+  "dataFlowGraph": {
+    "nodes": ["User", "Order", "Product"],
+    "edges": [
+      { "from": "User", "to": "Order", "relation": "places" },
+      { "from": "Order", "to": "Product", "relation": "contains" }
+    ]
+  },
+  "criticalEndpoints": ["POST /login", "DELETE /users/{id}", "PUT /admin/settings"],
   "summary": "Brief overview of what was discovered"
 }
 
@@ -47,11 +51,11 @@ Discover ALL important endpoints, especially sensitive ones (auth, payments, adm
 const explorerAgent = {
   name: "Explorer",
   emoji: "🔍",
-  description: "Discovers important endpoints and schema tree",
+  description: "Discovers important endpoints, schema tree, and data flow",
 
   async run(context) {
     const input = context.input;
-    const userMessage = `Analyze this API and extract important endpoints + schema tree:\n${typeof input === "string" ? input : JSON.stringify(input, null, 2)}`;
+    const userMessage = `Analyze this API and extract important endpoints + schema tree + data flow graph:\n${typeof input === "string" ? input : JSON.stringify(input, null, 2)}`;
     const raw = await callClaude(SYSTEM_PROMPT, userMessage);
     return parseAgentJSON(raw);
   },
