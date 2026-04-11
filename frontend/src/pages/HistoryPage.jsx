@@ -1,22 +1,30 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = 'http://localhost:5001';
 
 export default function HistoryPage() {
+  const { token, user } = useAuth();
   const [scans, setScans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchHistory();
-  }, []);
+    if (token) {
+      fetchHistory();
+    }
+  }, [token]);
 
   const fetchHistory = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/api/scan`);
+      const res = await fetch(`${API_BASE}/api/scan`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       const data = await res.json();
       setScans(data.scans || []);
     } catch (err) {
@@ -45,6 +53,24 @@ export default function HistoryPage() {
     const d = new Date(dateStr);
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
+
+  if (!user) {
+    return (
+      <div className="history-page fade-in-up">
+        <div className="history-header">
+          <h2>📋 Scan History</h2>
+        </div>
+        <div className="history-empty">
+          <div className="placeholder-icon">🔐</div>
+          <h3>Login Required</h3>
+          <p>Please sign in to view your scan history.</p>
+          <div style={{ marginTop: '20px' }}>
+            <button className="refresh-btn" style={{ background: 'var(--bg-tertiary)' }} onClick={() => navigate('/login')}>Sign In</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

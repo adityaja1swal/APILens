@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
+import { useAuth } from '../context/AuthContext';
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = 'http://localhost:5001';
 
 function SecurityScoreRing({ score }) {
   const scoreColor = score >= 80 ? '#10B981' : score >= 60 ? '#F59E0B' : score >= 40 ? '#F97316' : '#EF4444';
@@ -75,6 +76,7 @@ function downloadFile(content, filename, type = 'application/json') {
 }
 
 export default function ReportPage() {
+  const { token, user } = useAuth();
   const { scanId } = useParams();
   const navigate = useNavigate();
   const [report, setReport] = useState(null);
@@ -83,15 +85,21 @@ export default function ReportPage() {
   const [expandedTests, setExpandedTests] = useState(new Set());
 
   useEffect(() => {
-    fetchReport();
-  }, [scanId]);
+    if (token) {
+      fetchReport();
+    }
+  }, [scanId, token]);
 
   const fetchReport = async () => {
     try {
       setLoading(true);
 
       // Try to get the scan data
-      const scanRes = await fetch(`${API_BASE}/api/scan/${scanId}`);
+      const scanRes = await fetch(`${API_BASE}/api/scan/${scanId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       if (scanRes.ok) {
         const scanData = await scanRes.json();
         setScan(scanData);
@@ -104,7 +112,11 @@ export default function ReportPage() {
 
       // Also try dedicated report endpoint
       try {
-        const reportRes = await fetch(`${API_BASE}/api/report/${scanId}`);
+        const reportRes = await fetch(`${API_BASE}/api/report/${scanId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
         if (reportRes.ok) {
           const reportData = await reportRes.json();
           if (reportData.testResults || reportData.results) {

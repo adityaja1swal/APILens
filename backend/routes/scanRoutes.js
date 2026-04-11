@@ -1,6 +1,7 @@
 const express = require("express");
 const { v4: uuidv4 } = require("uuid");
 const swaggerParser = require("../services/ingestion/swaggerParser");
+const auth = require("../middleware/auth");
 
 // Conditionally require models (graceful when MongoDB is not connected)
 let ScanResult, Api, Endpoint, Report, Vulnerability;
@@ -18,7 +19,7 @@ function createScanRoutes(pipeline) {
   const router = express.Router();
 
   // POST /api/scan/start — Start a new scan
-  router.post("/start", async (req, res) => {
+  router.post("/start", auth, async (req, res) => {
     try {
       const { input, inputType, config } = req.body;
 
@@ -62,6 +63,7 @@ function createScanRoutes(pipeline) {
               }
 
               scanRecord = await ScanResult.create({
+                userId: req.user.id,
                 apiId: apiDoc._id,
                 apiName,
                 swaggerUrl: typeof input === "string" ? input : "",
@@ -72,6 +74,7 @@ function createScanRoutes(pipeline) {
           } catch (parseErr) {
             // If parsing fails, still create scan record
             scanRecord = await ScanResult.create({
+              userId: req.user.id,
               apiName,
               swaggerUrl: typeof input === "string" ? input : "",
               status: "running",
@@ -220,13 +223,13 @@ function createScanRoutes(pipeline) {
     }
   });
 
-  // GET /api/scan/history — List all past scans
-  router.get("/", async (req, res) => {
+  // GET /api/scan/history — List all past scans for current user
+  router.get("/", auth, async (req, res) => {
     try {
       if (!ScanResult) {
         return res.json({ scans: [], message: "Database not connected" });
       }
-      const scans = await ScanResult.find()
+      const scans = await ScanResult.find({ userId: req.user.id })
         .sort({ createdAt: -1 })
         .limit(50)
         .select("apiName swaggerUrl status securityScore totalTests passed failed warnings duration createdAt completedAt")

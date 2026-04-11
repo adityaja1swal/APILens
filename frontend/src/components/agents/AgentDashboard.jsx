@@ -1,14 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import TeamSelector from './TeamSelector';
 import AgentPipeline from './AgentPipeline';
 import AgentChat from './AgentChat';
 import AgentOutput from './AgentOutput';
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = 'http://localhost:5001';
 const ALL_AGENTS = ['Explorer', 'Tester', 'Guardian'];
 
 export default function AgentDashboard() {
+  const { token, user } = useAuth();
+  const navigate = useNavigate();
   // Pipeline state
   const [pipelineStatus, setPipelineStatus] = useState('idle'); // idle | running | complete | error
   const [agentStatuses, setAgentStatuses] = useState({
@@ -128,7 +132,7 @@ export default function AgentDashboard() {
     }
 
     return socket;
-  }, [addLog]);
+  }, [addLog, agentStatuses]);
 
   // Connect on mount
   useEffect(() => {
@@ -189,7 +193,10 @@ export default function AgentDashboard() {
     try {
       const res = await fetch(`${API_BASE}/api/agents/run`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           input: inputData,
           agents: selectedAgents,
@@ -216,8 +223,22 @@ export default function AgentDashboard() {
     );
   };
 
+  if (!user) {
+    return (
+      <div className="agent-dashboard fade-in">
+        <div className="dashboard-hero">
+          <h1>🔬 API Security Scanner</h1>
+          <p>Please login to scan your APIs and track vulnerabilities.</p>
+          <div style={{ marginTop: '24px' }}>
+            <button className="run-pipeline-btn" onClick={() => navigate('/login')}>Sign in to proceed</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="agent-dashboard fade-in-up">
+    <div className="agent-dashboard fade-in">
       {/* Header */}
       <div className="agent-dashboard-header">
         <h2>🤖 Multi-Team Agent System</h2>

@@ -1,11 +1,12 @@
 const express = require("express");
 const { v4: uuidv4 } = require("uuid");
+const auth = require("../middleware/auth");
 
 function createAgentRoutes(pipeline) {
   const router = express.Router();
 
   // POST /api/agents/run — Start full pipeline
-  router.post("/run", async (req, res) => {
+  router.post("/run", auth, async (req, res) => {
     try {
       const { input, agents } = req.body;
 
@@ -40,7 +41,7 @@ function createAgentRoutes(pipeline) {
   });
 
   // POST /api/agents/run-single — Run single agent
-  router.post("/run-single", async (req, res) => {
+  router.post("/run-single", auth, async (req, res) => {
     try {
       const { agentName, inputData, context } = req.body;
 

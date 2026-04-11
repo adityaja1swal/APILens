@@ -9,6 +9,7 @@ const { connectDB, getConnectionStatus } = require("./config/database");
 const createAgentRoutes = require("./routes/agentRoutes");
 const createScanRoutes = require("./routes/scanRoutes");
 const createReportRoutes = require("./routes/reportRoutes");
+const authRoutes = require("./routes/authRoutes");
 const AgentPipeline = require("./agents/agentRunner");
 
 const app = express();
@@ -33,6 +34,7 @@ const pipeline = new AgentPipeline(io);
 app.use("/api/agents", createAgentRoutes(pipeline));
 app.use("/api/scan", createScanRoutes(pipeline));
 app.use("/api/report", createReportRoutes());
+app.use("/api/auth", authRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

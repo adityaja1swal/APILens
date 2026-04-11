@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const scanResultSchema = new mongoose.Schema({
   apiId: { type: mongoose.Schema.Types.ObjectId, ref: "Api" },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   apiName: { type: String, default: "Unknown API" },
   swaggerUrl: { type: String },
   status: {

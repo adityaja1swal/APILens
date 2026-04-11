@@ -6,39 +6,59 @@ async function callClaude(systemPrompt, userMessage, context = "") {
     console.log("🛠️ [MOCK MODE] Simulating Claude response...");
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    if (systemPrompt.includes("Explorer")) {
+    if (systemPrompt.includes("Guardian")) {
       return JSON.stringify({
-        agentName: "Explorer",
+        agentName: "Guardian",
         status: "complete",
-        importantEndpoints: [
-          { method: "GET", path: "/pet/{petId}", params: ["petId"], authRequired: true, riskLevel: "medium", description: "Find pet by ID" },
-          { method: "POST", path: "/pet", params: ["body"], authRequired: true, riskLevel: "high", description: "Add a new pet to the store" },
-          { method: "GET", path: "/user/login", params: ["username", "password"], authRequired: false, riskLevel: "critical", description: "Logs user into the system" },
-          { method: "POST", path: "/store/order", params: ["body"], authRequired: false, riskLevel: "high", description: "Place an order for a pet" },
-          { method: "DELETE", path: "/pet/{petId}", params: ["petId", "api_key"], authRequired: true, riskLevel: "high", description: "Deletes a pet" },
-          { method: "GET", path: "/store/inventory", params: [], authRequired: true, riskLevel: "medium", description: "Returns pet inventories by status" },
-          { method: "POST", path: "/user", params: ["body"], authRequired: false, riskLevel: "high", description: "Create user" },
-          { method: "PUT", path: "/user/{username}", params: ["username", "body"], authRequired: true, riskLevel: "high", description: "Update user" }
+        securityScore: 28,
+        totalIssues: 8,
+        results: [
+          {
+            testId: 1, testName: "Authentication Test", verdict: "FAIL", severity: "critical",
+            findings: [{ issue: "Unauthenticated access to store/order and user endpoints", endpoint: "POST /store/order, POST /user", proof: "Request: POST /store/order HTTP/1.1\\nContent-Type: application/json\\n\\n{\"petId\":1,\"quantity\":999}\\n\\nResponse: 200 OK\\n{\"id\":10,\"petId\":1,\"quantity\":999,\"status\":\"placed\"}\\n\\nNo Authorization header was included. The order was placed successfully without any authentication.", explanation: "Critical store and user endpoints accept requests without authentication tokens, allowing anonymous users to place orders and create accounts without verification.", businessImpact: "Anyone can place unlimited orders, create fake accounts, and manipulate store data without login.", cwe: "CWE-306", cweName: "Missing Authentication for Critical Function", remediation: "Add authentication middleware to all sensitive endpoints:\\n\\n```javascript\\nconst jwt = require('jsonwebtoken');\\n\\nfunction authMiddleware(req, res, next) {\\n  const token = req.headers.authorization?.split(' ')[1];\\n  if (!token) return res.status(401).json({ error: 'Authentication required' });\\n  try {\\n    req.user = jwt.verify(token, process.env.JWT_SECRET);\\n    next();\\n  } catch { res.status(401).json({ error: 'Invalid token' }); }\\n}\\n\\napp.post('/store/order', authMiddleware, orderController);\\n```", fixEffort: "medium" }]
+          },
+          {
+            testId: 2, testName: "Excessive Data Exposure", verdict: "FAIL", severity: "high",
+            findings: [{ issue: "Password returned in user profile response", endpoint: "GET /user/{username}", proof: "Request: GET /user/john HTTP/1.1\\n\\nResponse: 200 OK\\n{\"id\":1,\"username\":\"john\",\"password\":\"12345\",\"email\":\"john@email.com\",\"phone\":\"555-0123\"}\\n\\nPassword field is returned in plain text.", explanation: "The user endpoint returns the raw password field in the response body, exposing credentials.", businessImpact: "Credential theft — any authenticated user can view other users' passwords.", cwe: "CWE-200", cweName: "Exposure of Sensitive Information", remediation: "Filter sensitive fields before returning response:\\n\\n```javascript\\napp.get('/user/:username', auth, async (req, res) => {\\n  const user = await User.findOne({ username: req.params.username });\\n  const { password, ...safeUser } = user.toObject();\\n  res.json(safeUser);\\n});\\n```", fixEffort: "low" }]
+          },
+          {
+            testId: 4, testName: "Injection (SQL/NoSQL)", verdict: "FAIL", severity: "critical",
+            findings: [{ issue: "SQL injection via login username parameter", endpoint: "GET /user/login", proof: "Request: GET /user/login?username=' OR 1=1 --&password=test\\n\\nResponse: 200 OK\\n{\"code\":200,\"message\":\"logged in user session\"}\\n\\nInjection payload was not sanitized and returned a success response.", explanation: "The login endpoint directly uses the username parameter in a query without sanitization, making it vulnerable to SQL injection attacks.", businessImpact: "Complete authentication bypass. Attacker can login as any user, dump entire database, or execute arbitrary commands.", cwe: "CWE-89", cweName: "SQL Injection", remediation: "Use parameterized queries:\\n\\n```javascript\\n// BAD\\ndb.query(`SELECT * FROM users WHERE username = '${username}'`);\\n\\n// GOOD\\ndb.query('SELECT * FROM users WHERE username = ?', [username]);\\n\\n// Also add input validation:\\nconst { body, validationResult } = require('express-validator');\\napp.get('/user/login',\\n  body('username').isAlphanumeric().trim().escape(),\\n  (req, res) => { ... }\\n);\\n```", fixEffort: "medium" }]
+          },
+          {
+            testId: 5, testName: "Rate Limiting", verdict: "FAIL", severity: "high",
+            findings: [{ issue: "No rate limiting on any endpoint", endpoint: "Global", proof: "Sent 500 requests to GET /pet/1 in 10 seconds.\\nAll 500 returned 200 OK.\\nNo 429 Too Many Requests responses received.\\nNo progressive delays observed.", explanation: "The API has no rate limiting mechanism, allowing unlimited requests from any source. This enables brute force attacks on the login endpoint and resource exhaustion.", businessImpact: "Brute force credential attacks, denial of service, API abuse.", cwe: "CWE-770", cweName: "Allocation of Resources Without Limits", remediation: "Add rate limiting middleware:\\n\\n```javascript\\nconst rateLimit = require('express-rate-limit');\\n\\nconst limiter = rateLimit({\\n  windowMs: 15 * 60 * 1000,\\n  max: 100,\\n  standardHeaders: true,\\n  legacyHeaders: false,\\n});\\n\\nconst loginLimiter = rateLimit({\\n  windowMs: 15 * 60 * 1000,\\n  max: 5,\\n  message: 'Too many login attempts'\\n});\\n\\napp.use('/api/', limiter);\\napp.use('/user/login', loginLimiter);\\n```", fixEffort: "low" }]
+          },
+          {
+            testId: 7, testName: "Sensitive Data in URL", verdict: "FAIL", severity: "high",
+            findings: [{ issue: "Login credentials passed in URL query parameters", endpoint: "GET /user/login", proof: "The login endpoint uses GET method with credentials as query params:\\nGET /user/login?username=admin&password=s3cret\\n\\nCredentials are visible in:\\n- Browser history\\n- Server access logs\\n- Proxy logs\\n- Network monitoring tools", explanation: "Authentication credentials are transmitted via URL query parameters instead of the request body, exposing them in multiple logging surfaces.", businessImpact: "Credential exposure through server logs, browser history, and network proxies.", cwe: "CWE-598", cweName: "Use of GET Request Method With Sensitive Query Strings", remediation: "Change login to POST with credentials in request body:\\n\\n```javascript\\n// Change from GET to POST\\napp.post('/user/login', (req, res) => {\\n  const { username, password } = req.body;\\n  // ... authentication logic\\n});\\n```", fixEffort: "low" }]
+          },
+          {
+            testId: 10, testName: "Parameter Tampering", verdict: "FAIL", severity: "high",
+            findings: [{ issue: "IDOR — sequential ID enumeration exposes all resources", endpoint: "GET /pet/{petId}", proof: "GET /pet/1 → 200 OK (Pet: Doggie)\\nGET /pet/2 → 200 OK (Pet: Cat)\\nGET /pet/3 → 200 OK (Pet: Bird)\\n\\nAll pet records accessible by iterating IDs. No ownership check.", explanation: "Resources use sequential integer IDs with no authorization check, allowing any user to access any pet record by changing the ID.", businessImpact: "Complete data enumeration — attacker can scrape all records by iterating IDs.", cwe: "CWE-639", cweName: "Authorization Bypass Through User-Controlled Key", remediation: "Add ownership validation:\\n\\n```javascript\\napp.get('/pet/:petId', auth, async (req, res) => {\\n  const pet = await Pet.findById(req.params.petId);\\n  if (pet.ownerId !== req.user.id) {\\n    return res.status(403).json({ error: 'Access denied' });\\n  }\\n  res.json(pet);\\n});\\n// Also consider using UUIDs instead of sequential IDs\\n```", fixEffort: "medium" }]
+          },
+          {
+            testId: 11, testName: "File Upload Vulnerability", verdict: "PASS", severity: "none",
+            findings: [],
+            passEvidence: "Uploaded test files with extensions .php, .exe, .jsp with spoofed MIME types. All were rejected with 415 Unsupported Media Type. Only image/jpeg and image/png MIME types accepted. Filename sanitization strips path traversal sequences.",
+            note: "File upload security is properly implemented with MIME validation and type restrictions."
+          },
+          {
+            testId: 12, testName: "Business Logic Testing", verdict: "FAIL", severity: "high",
+            findings: [{ issue: "Order accepts negative quantities", endpoint: "POST /store/order", proof: "Request: POST /store/order\\n{\"petId\":1,\"quantity\":-5}\\n\\nResponse: 200 OK\\n{\"id\":12,\"petId\":1,\"quantity\":-5,\"status\":\"placed\"}\\n\\nNegative quantity accepted and order placed.", explanation: "The store order endpoint does not validate business logic constraints. Negative quantities, zero values, and excessively large numbers are all accepted.", businessImpact: "Financial manipulation — negative quantities could generate credits or reverse charges.", cwe: "CWE-840", cweName: "Business Logic Errors", remediation: "Add input validation for business rules:\\n\\n```javascript\\napp.post('/store/order', auth, (req, res) => {\\n  const { petId, quantity } = req.body;\\n  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {\\n    return res.status(400).json({ error: 'Quantity must be 1-100' });\\n  }\\n  if (!petId || petId < 1) {\\n    return res.status(400).json({ error: 'Invalid pet ID' });\\n  }\\n  // ... create order\\n});\\n```", fixEffort: "low" }]
+          }
         ],
-        schemaTree: {
-          "Pet": { "id": "integer", "name": "string", "status": "string", "photoUrls": "array<string>", "tags": "array<Tag>" },
-          "Order": { "id": "integer", "petId": "integer", "quantity": "integer", "shipDate": "string (date-time)", "status": "string", "complete": "boolean" },
-          "User": { "id": "integer", "username": "string", "firstName": "string", "lastName": "string", "email": "string", "password": "string (sensitive)", "phone": "string", "userStatus": "integer" },
-          "Tag": { "id": "integer", "name": "string" },
-          "Category": { "id": "integer", "name": "string" }
-        },
-        dataFlowGraph: {
-          nodes: ["Pet", "Order", "User", "Store", "Tag", "Category"],
-          edges: [
-            { from: "User", to: "Order", relation: "places" },
-            { from: "Order", to: "Pet", relation: "references" },
-            { from: "Pet", to: "Category", relation: "belongs_to" },
-            { from: "Pet", to: "Tag", relation: "tagged_with" },
-            { from: "Store", to: "Order", relation: "fulfills" }
-          ]
-        },
-        criticalEndpoints: ["GET /user/login", "POST /user", "DELETE /pet/{petId}", "POST /store/order"],
-        summary: "Found 8 important endpoints across Pet, Store, and User resources. Critical: login endpoint passes credentials in query params, user creation has no auth, and store orders are unauthenticated."
+        executiveSummary: "This API has critical security vulnerabilities. 8 of 12 tests failed, including authentication bypass, SQL injection, and credential exposure. The Petstore API currently scores 28/100, indicating severe security deficiencies that require immediate attention. Priority fixes: add authentication to all sensitive endpoints, switch login to POST, implement parameterized queries, and add rate limiting.",
+        criticalActions: [
+          "1. Add authentication middleware to /store/order and /user endpoints immediately",
+          "2. Fix SQL injection on /user/login — use parameterized queries",
+          "3. Switch login from GET to POST to prevent credential exposure in URLs",
+          "4. Remove password field from user profile responses",
+          "5. Implement rate limiting across all endpoints",
+          "6. Add IDOR protection with ownership checks on resource endpoints",
+          "7. Add business logic validation on order quantities"
+        ],
+        complianceNotes: "OWASP Top 10 Coverage: A01 Broken Access Control (FAIL), A02 Cryptographic Failures (WARN), A03 Injection (FAIL), A04 Insecure Design (FAIL), A05 Security Misconfiguration (WARN), A06 Vulnerable Components (N/A), A07 Auth Failures (FAIL), A08 Data Integrity Failures (N/A), A09 Logging Failures (N/A), A10 SSRF (N/A)"
       });
     }
 
@@ -101,61 +121,42 @@ async function callClaude(systemPrompt, userMessage, context = "") {
       });
     }
 
-    if (systemPrompt.includes("Guardian")) {
+    if (systemPrompt.includes("Explorer")) {
       return JSON.stringify({
-        agentName: "Guardian",
+        agentName: "Explorer",
         status: "complete",
-        securityScore: 28,
-        totalIssues: 8,
-        results: [
-          {
-            testId: 1, testName: "Authentication Test", verdict: "FAIL", severity: "critical",
-            findings: [{ issue: "Unauthenticated access to store/order and user endpoints", endpoint: "POST /store/order, POST /user", proof: "Request: POST /store/order HTTP/1.1\\nContent-Type: application/json\\n\\n{\"petId\":1,\"quantity\":999}\\n\\nResponse: 200 OK\\n{\"id\":10,\"petId\":1,\"quantity\":999,\"status\":\"placed\"}\\n\\nNo Authorization header was included. The order was placed successfully without any authentication.", explanation: "Critical store and user endpoints accept requests without authentication tokens, allowing anonymous users to place orders and create accounts without verification.", businessImpact: "Anyone can place unlimited orders, create fake accounts, and manipulate store data without login.", cwe: "CWE-306", cweName: "Missing Authentication for Critical Function", remediation: "Add authentication middleware to all sensitive endpoints:\\n\\n```javascript\\nconst jwt = require('jsonwebtoken');\\n\\nfunction authMiddleware(req, res, next) {\\n  const token = req.headers.authorization?.split(' ')[1];\\n  if (!token) return res.status(401).json({ error: 'Authentication required' });\\n  try {\\n    req.user = jwt.verify(token, process.env.JWT_SECRET);\\n    next();\\n  } catch { res.status(401).json({ error: 'Invalid token' }); }\\n}\\n\\napp.post('/store/order', authMiddleware, orderController);\\n```", fixEffort: "medium" }]
-          },
-          {
-            testId: 2, testName: "Excessive Data Exposure", verdict: "FAIL", severity: "high",
-            findings: [{ issue: "Password returned in user profile response", endpoint: "GET /user/{username}", proof: "Request: GET /user/john HTTP/1.1\\n\\nResponse: 200 OK\\n{\"id\":1,\"username\":\"john\",\"password\":\"12345\",\"email\":\"john@email.com\",\"phone\":\"555-0123\"}\\n\\nPassword field is returned in plain text.", explanation: "The user endpoint returns the raw password field in the response body, exposing credentials.", businessImpact: "Credential theft — any authenticated user can view other users' passwords.", cwe: "CWE-200", cweName: "Exposure of Sensitive Information", remediation: "Filter sensitive fields before returning response:\\n\\n```javascript\\napp.get('/user/:username', auth, async (req, res) => {\\n  const user = await User.findOne({ username: req.params.username });\\n  const { password, ...safeUser } = user.toObject();\\n  res.json(safeUser);\\n});\\n```", fixEffort: "low" }]
-          },
-          {
-            testId: 4, testName: "Injection (SQL/NoSQL)", verdict: "FAIL", severity: "critical",
-            findings: [{ issue: "SQL injection via login username parameter", endpoint: "GET /user/login", proof: "Request: GET /user/login?username=' OR 1=1 --&password=test\\n\\nResponse: 200 OK\\n{\"code\":200,\"message\":\"logged in user session\"}\\n\\nInjection payload was not sanitized and returned a success response.", explanation: "The login endpoint directly uses the username parameter in a query without sanitization, making it vulnerable to SQL injection attacks.", businessImpact: "Complete authentication bypass. Attacker can login as any user, dump entire database, or execute arbitrary commands.", cwe: "CWE-89", cweName: "SQL Injection", remediation: "Use parameterized queries:\\n\\n```javascript\\n// BAD\\ndb.query(`SELECT * FROM users WHERE username = '${username}'`);\\n\\n// GOOD\\ndb.query('SELECT * FROM users WHERE username = ?', [username]);\\n\\n// Also add input validation:\\nconst { body, validationResult } = require('express-validator');\\napp.get('/user/login',\\n  body('username').isAlphanumeric().trim().escape(),\\n  (req, res) => { ... }\\n);\\n```", fixEffort: "medium" }]
-          },
-          {
-            testId: 5, testName: "Rate Limiting", verdict: "FAIL", severity: "high",
-            findings: [{ issue: "No rate limiting on any endpoint", endpoint: "Global", proof: "Sent 500 requests to GET /pet/1 in 10 seconds.\\nAll 500 returned 200 OK.\\nNo 429 Too Many Requests responses received.\\nNo progressive delays observed.", explanation: "The API has no rate limiting mechanism, allowing unlimited requests from any source. This enables brute force attacks on the login endpoint and resource exhaustion.", businessImpact: "Brute force credential attacks, denial of service, API abuse.", cwe: "CWE-770", cweName: "Allocation of Resources Without Limits", remediation: "Add rate limiting middleware:\\n\\n```javascript\\nconst rateLimit = require('express-rate-limit');\\n\\nconst limiter = rateLimit({\\n  windowMs: 15 * 60 * 1000,\\n  max: 100,\\n  standardHeaders: true,\\n  legacyHeaders: false,\\n});\\n\\nconst loginLimiter = rateLimit({\\n  windowMs: 15 * 60 * 1000,\\n  max: 5,\\n  message: 'Too many login attempts'\\n});\\n\\napp.use('/api/', limiter);\\napp.use('/user/login', loginLimiter);\\n```", fixEffort: "low" }]
-          },
-          {
-            testId: 7, testName: "Sensitive Data in URL", verdict: "FAIL", severity: "high",
-            findings: [{ issue: "Login credentials passed in URL query parameters", endpoint: "GET /user/login", proof: "The login endpoint uses GET method with credentials as query params:\\nGET /user/login?username=admin&password=s3cret\\n\\nCredentials are visible in:\\n- Browser history\\n- Server access logs\\n- Proxy logs\\n- Network monitoring tools", explanation: "Authentication credentials are transmitted via URL query parameters instead of the request body, exposing them in multiple logging surfaces.", businessImpact: "Credential exposure through server logs, browser history, and network proxies.", cwe: "CWE-598", cweName: "Use of GET Request Method With Sensitive Query Strings", remediation: "Change login to POST with credentials in request body:\\n\\n```javascript\\n// Change from GET to POST\\napp.post('/user/login', (req, res) => {\\n  const { username, password } = req.body;\\n  // ... authentication logic\\n});\\n```", fixEffort: "low" }]
-          },
-          {
-            testId: 10, testName: "Parameter Tampering", verdict: "FAIL", severity: "high",
-            findings: [{ issue: "IDOR — sequential ID enumeration exposes all resources", endpoint: "GET /pet/{petId}", proof: "GET /pet/1 → 200 OK (Pet: Doggie)\\nGET /pet/2 → 200 OK (Pet: Cat)\\nGET /pet/3 → 200 OK (Pet: Bird)\\n\\nAll pet records accessible by iterating IDs. No ownership check.", explanation: "Resources use sequential integer IDs with no authorization check, allowing any user to access any pet record by changing the ID.", businessImpact: "Complete data enumeration — attacker can scrape all records by iterating IDs.", cwe: "CWE-639", cweName: "Authorization Bypass Through User-Controlled Key", remediation: "Add ownership validation:\\n\\n```javascript\\napp.get('/pet/:petId', auth, async (req, res) => {\\n  const pet = await Pet.findById(req.params.petId);\\n  if (pet.ownerId !== req.user.id) {\\n    return res.status(403).json({ error: 'Access denied' });\\n  }\\n  res.json(pet);\\n});\\n// Also consider using UUIDs instead of sequential IDs\\n```", fixEffort: "medium" }]
-          },
-          {
-            testId: 11, testName: "File Upload Vulnerability", verdict: "PASS", severity: "none",
-            findings: [],
-            passEvidence: "Uploaded test files with extensions .php, .exe, .jsp with spoofed MIME types. All were rejected with 415 Unsupported Media Type. Only image/jpeg and image/png MIME types accepted. Filename sanitization strips path traversal sequences.",
-            note: "File upload security is properly implemented with MIME validation and type restrictions."
-          },
-          {
-            testId: 12, testName: "Business Logic Testing", verdict: "FAIL", severity: "high",
-            findings: [{ issue: "Order accepts negative quantities", endpoint: "POST /store/order", proof: "Request: POST /store/order\\n{\"petId\":1,\"quantity\":-5}\\n\\nResponse: 200 OK\\n{\"id\":12,\"petId\":1,\"quantity\":-5,\"status\":\"placed\"}\\n\\nNegative quantity accepted and order placed.", explanation: "The store order endpoint does not validate business logic constraints. Negative quantities, zero values, and excessively large numbers are all accepted.", businessImpact: "Financial manipulation — negative quantities could generate credits or reverse charges.", cwe: "CWE-840", cweName: "Business Logic Errors", remediation: "Add input validation for business rules:\\n\\n```javascript\\napp.post('/store/order', auth, (req, res) => {\\n  const { petId, quantity } = req.body;\\n  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {\\n    return res.status(400).json({ error: 'Quantity must be 1-100' });\\n  }\\n  if (!petId || petId < 1) {\\n    return res.status(400).json({ error: 'Invalid pet ID' });\\n  }\\n  // ... create order\\n});\\n```", fixEffort: "low" }]
-          }
+        importantEndpoints: [
+          { method: "GET", path: "/pet/{petId}", params: ["petId"], authRequired: true, riskLevel: "medium", description: "Find pet by ID" },
+          { method: "POST", path: "/pet", params: ["body"], authRequired: true, riskLevel: "high", description: "Add a new pet to the store" },
+          { method: "GET", path: "/user/login", params: ["username", "password"], authRequired: false, riskLevel: "critical", description: "Logs user into the system" },
+          { method: "POST", path: "/store/order", params: ["body"], authRequired: false, riskLevel: "high", description: "Place an order for a pet" },
+          { method: "DELETE", path: "/pet/{petId}", params: ["petId", "api_key"], authRequired: true, riskLevel: "high", description: "Deletes a pet" },
+          { method: "GET", path: "/store/inventory", params: [], authRequired: true, riskLevel: "medium", description: "Returns pet inventories by status" },
+          { method: "POST", path: "/user", params: ["body"], authRequired: false, riskLevel: "high", description: "Create user" },
+          { method: "PUT", path: "/user/{username}", params: ["username", "body"], authRequired: true, riskLevel: "high", description: "Update user" }
         ],
-        executiveSummary: "This API has critical security vulnerabilities. 8 of 12 tests failed, including authentication bypass, SQL injection, and credential exposure. The Petstore API currently scores 28/100, indicating severe security deficiencies that require immediate attention. Priority fixes: add authentication to all sensitive endpoints, switch login to POST, implement parameterized queries, and add rate limiting.",
-        criticalActions: [
-          "1. Add authentication middleware to /store/order and /user endpoints immediately",
-          "2. Fix SQL injection on /user/login — use parameterized queries",
-          "3. Switch login from GET to POST to prevent credential exposure in URLs",
-          "4. Remove password field from user profile responses",
-          "5. Implement rate limiting across all endpoints",
-          "6. Add IDOR protection with ownership checks on resource endpoints",
-          "7. Add business logic validation on order quantities"
-        ],
-        complianceNotes: "OWASP Top 10 Coverage: A01 Broken Access Control (FAIL), A02 Cryptographic Failures (WARN), A03 Injection (FAIL), A04 Insecure Design (FAIL), A05 Security Misconfiguration (WARN), A06 Vulnerable Components (N/A), A07 Auth Failures (FAIL), A08 Data Integrity Failures (N/A), A09 Logging Failures (N/A), A10 SSRF (N/A)"
+        schemaTree: {
+          "Pet": { "id": "integer", "name": "string", "status": "string", "photoUrls": "array<string>", "tags": "array<Tag>" },
+          "Order": { "id": "integer", "petId": "integer", "quantity": "integer", "shipDate": "string (date-time)", "status": "string", "complete": "boolean" },
+          "User": { "id": "integer", "username": "string", "firstName": "string", "lastName": "string", "email": "string", "password": "string (sensitive)", "phone": "string", "userStatus": "integer" },
+          "Tag": { "id": "integer", "name": "string" },
+          "Category": { "id": "integer", "name": "string" }
+        },
+        dataFlowGraph: {
+          nodes: ["Pet", "Order", "User", "Store", "Tag", "Category"],
+          edges: [
+            { from: "User", to: "Order", relation: "places" },
+            { from: "Order", to: "Pet", relation: "references" },
+            { from: "Pet", to: "Category", relation: "belongs_to" },
+            { from: "Pet", to: "Tag", relation: "tagged_with" },
+            { from: "Store", to: "Order", relation: "fulfills" }
+          ]
+        },
+        criticalEndpoints: ["GET /user/login", "POST /user", "DELETE /pet/{petId}", "POST /store/order"],
+        summary: "Found 8 important endpoints across Pet, Store, and User resources. Critical: login endpoint passes credentials in query params, user creation has no auth, and store orders are unauthenticated."
       });
     }
+
     return "{}";
   }
 
